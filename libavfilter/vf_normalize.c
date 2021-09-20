@@ -81,6 +81,7 @@
 #include "formats.h"
 #include "internal.h"
 #include "video.h"
+#include "libavutil/avassert.h"
 
 typedef struct NormalizeHistory {
     uint16_t *history;      // History entries.
@@ -225,6 +226,39 @@ static void find_min_max_16(NormalizeContext *s, AVFrame *in, NormalizeLocal min
             inp += s->step;
         }
     }
+#define HIST_SIZE 10000
+    unsigned long hist[3][HIST_SIZE] = { 0 };
+
+    for (int y = 0; y < in->height; y++) {
+        uint16_t *inp = (uint16_t *)(in->data[0] + y * in->linesize[0]);
+        for (int x = 0; x < in->width; x++) {
+            for (int c = 0; c < 3; c++) {
+                int v = (int)inp[s->co[c]];
+                int mi = (int)min[c].in;
+                int ma = (int)max[c].in;
+                int bin = (v-mi)*(HIST_SIZE-1)/(ma-mi);
+
+                hist[c][bin] += 1;
+            }
+            inp += s->step;
+        }
+    }
+
+    float total = (float)(in->height * in->width);
+
+    for (int c = 0; c < 3; c++) {
+        int found = 0;
+        for (int i = (HIST_SIZE-1); i>= 0; i--) {
+            found += hist[c][i];
+            if (((float)found / total) > 0.001) {
+                int mi = (int)min[c].in;
+                int ma = (int)max[c].in;
+                int new_max = i*(ma-mi)/HIST_SIZE+mi;
+                max[c].in = new_max;
+                break;
+            }
+        }
+    }
 }
 
 static void process_16(NormalizeContext *s, AVFrame *in, AVFrame *out)
@@ -367,9 +401,15 @@ static void normalize(NormalizeContext *s, AVFrame *in, AVFrame *out)
             // larger than [min.smoothed,max.smoothed], some output values may
             // fall outside the [0,255] dynamic range. We need to clamp them.
             float scale = (max[c].out - min[c].out) / (max[c].smoothed - min[c].smoothed);
+            int out_val;
             for (in_val = min[c].in; in_val <= max[c].in; in_val++) {
-                int out_val = (in_val - min[c].smoothed) * scale + min[c].out + 0.5f;
+                out_val = (in_val - min[c].smoothed) * scale + min[c].out + 0.5f;
                 out_val = av_clip_uintp2_c(out_val, s->depth);
+                s->lut[c][in_val] = out_val;
+            }
+            // fill in rest of values above with the max to avoid clipping
+            // issues
+            for (in_val = max[c].in; in_val < 64000; in_val++) {
                 s->lut[c][in_val] = out_val;
             }
         }
