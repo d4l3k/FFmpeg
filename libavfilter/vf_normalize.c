@@ -103,6 +103,7 @@ typedef struct NormalizeContext {
     int smoothing;
     float independence;
     float strength;
+    float maxpct;
 
     uint8_t co[4];      // Offsets to R,G,B,A bytes respectively in each pixel
     int depth;
@@ -133,6 +134,7 @@ static const AVOption normalize_options[] = {
     { "smoothing",  "amount of temporal smoothing of the input range, to reduce flicker", OFFSET(smoothing), AV_OPT_TYPE_INT, {.i64=0}, 0, INT_MAX/8, FLAGS },
     { "independence", "proportion of independent to linked channel normalization", OFFSET(independence), AV_OPT_TYPE_FLOAT, {.dbl=1.0}, 0.0, 1.0, FLAGSR },
     { "strength", "strength of filter, from no effect to full normalization", OFFSET(strength), AV_OPT_TYPE_FLOAT, {.dbl=1.0}, 0.0, 1.0, FLAGSR },
+    { "maxpct", "max percentile to filter, from 0 to 1", OFFSET(maxpct), AV_OPT_TYPE_FLOAT, {.dbl=0.999}, 0.0, 1.0, FLAGSR },
     { NULL }
 };
 
@@ -250,7 +252,7 @@ static void find_min_max_16(NormalizeContext *s, AVFrame *in, NormalizeLocal min
         int found = 0;
         for (int i = (HIST_SIZE-1); i>= 0; i--) {
             found += hist[c][i];
-            if (((float)found / total) > 0.001) {
+            if (((float)found / total) > (1-s->maxpct)) {
                 int mi = (int)min[c].in;
                 int ma = (int)max[c].in;
                 int new_max = i*(ma-mi)/HIST_SIZE+mi;
