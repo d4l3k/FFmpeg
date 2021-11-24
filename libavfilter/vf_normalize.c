@@ -411,7 +411,7 @@ static void normalize(NormalizeContext *s, AVFrame *in, AVFrame *out)
             }
             // fill in rest of values above with the max to avoid clipping
             // issues
-            for (in_val = max[c].in; in_val < 64000; in_val++) {
+            for (in_val = max[c].in; in_val < 65536; in_val++) {
                 s->lut[c][in_val] = out_val;
             }
         }
